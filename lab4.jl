@@ -8,12 +8,9 @@ module Lab4
 using Knet,ArgParse
 
 function predict(w,x)
-    n=length(w)-4
+    n=length(w)-2
     for i=1:2:n
-        x = pool(relu.(conv4(w[i],x;padding=0) .+ w[i+1]))
-    end
-    for i=n+1:2:length(w)-2
-        x = relu.(w[i]*x .+ w[i+1])
+        x = pool(sigm.(conv4(w[i],x;padding=0) .+ w[i+1]))
     end
     x = mat(x)
     return w[end-1]*x .+ w[end]
@@ -23,20 +20,12 @@ loss(w,x,ygold) = nll(predict(w,x), ygold)
 
 lossgradient = grad(loss)
 
-function avgloss(w,data)
-	sum = cnt = 0
-	for(x,y) in data
-		sum += loss(w,x,y)
-		cnt += 1
-	end
-	return sum/cnt
-end
-
 function train(w, data; lr=.15, epochs=10, iters=1800)
     for epoch=1:epochs
         for (x,y) in data
             g = lossgradient(w, x, y)
-            update!(w, g, Adam())
+            opts = map(x->Adam(),w)
+	    update!(w, g, opts)
             if (iters -= 1) <= 0
                 return w
             end
@@ -46,14 +35,11 @@ function train(w, data; lr=.15, epochs=10, iters=1800)
 end
 
 function weights(;atype=KnetArray{Float32})
-    #layers
-    w = Array{Any}(6)
-    w[1] = xavier(5,5,1,3) #conv
-    w[2] = zeros(1,1,3,1) #bias
-    w[3] = xavier(100,432)#hidden 
-    w[4] = zeros(100,1) 
-    w[5] = xavier(10,100) #softmax
-    w[6] = zeros(10,1) #bias
+    w = Array{Any}(4)
+    w[1] = xavier(5,5,1,3)
+    w[2] = zeros(1,1,3,1)
+    w[3] = xavier(10,432)
+    w[4] = zeros(10,1)
     return map(a->convert(atype,a), w)
 end
 
@@ -88,7 +74,6 @@ function main(args=ARGS)
     global dtst = minibatch(xtst, ytst, o[:batchsize]; xtype=atype)
     w = weights(atype=atype)
     report(epoch)=println((:epoch,epoch,:trn,accuracy(w,dtrn,predict),:tst,accuracy(w,dtst,predict)))
-    
     trnloss = []
     tstloss = []
     trnerr = []
@@ -104,16 +89,9 @@ function main(args=ARGS)
             if o[:gcheck] > 0
                 gradcheck(loss, w, first(dtrn)...; gcheck=o[:gcheck], verbose=true)
             end
-	    push!(trnloss, avgloss(w,dtrn))
-            push!(tstloss, avgloss(w,dtst))
-            push!(trnerr, accuracy(w,dtrn)[2])
-            push!(tsterr, accuracy(w,dtst)[2]) 
+            
             if (iters -= length(dtrn)) <= 0; break; end
-        end
-        plot([trnloss tstloss],labels = [:trnloss :tstloss],xlabel="Epochs",ylabel="Loss")
-        savefig("loss.png")
-        plot([trnerr tsterr], labels=[:trnerr :tsterr], xlabel="Epochs", ylabel="Error") 
-        savefig("err.png") 
+        end 
     end
     return w
 end
